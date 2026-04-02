@@ -1,0 +1,9 @@
+frontend/.env.local
+frontend/node_modules/
+
+backend/venv/
+beckend/.env
+__pycache__/
+*.pyc
+
+.vite/
