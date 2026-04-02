@@ -6,51 +6,38 @@ from flask_cors import CORS
 from supabase import create_client, Client
 
 app = Flask(__name__)
-CORS(app)
-
+CORS(app, origins="*")
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 
-# Base client (used only for auth)
-base_supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+# Global Supabase client with anon key
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 
 # ── Auth Helpers ──────────────────────────────────────────────────────────────
 
-def get_auth():
+def get_user_id():
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
-        return None, None
+        return None
 
     token = auth.removeprefix("Bearer ")
 
     try:
-        user = base_supabase.auth.get_user(token)
-        return (user.user.id if user.user else None), token
+        user = supabase.auth.get_user(token)
+        return user.user.id if user.user else None
     except Exception:
-        return None, None
+        return None
 
 
 def require_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        user_id, token = get_auth()
+        user_id = get_user_id()
         if not user_id:
             return jsonify({"error": "Unauthorized"}), 401
-        return f(user_id, token, *args, **kwargs)
+        return f(user_id, *args, **kwargs)
     return wrapper
-
-
-def get_supabase_client(token: str) -> Client:
-    return create_client(
-        SUPABASE_URL,
-        SUPABASE_ANON_KEY,
-        options={
-            "headers": {
-                "Authorization": f"Bearer {token}"
-            }
-        }
-    )
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -64,30 +51,21 @@ def health():
 
 @app.get("/tasks")
 @require_auth
-def get_tasks(user_id, token):
-    sb = get_supabase_client(token)
-
-    res = (
-        sb.table("tasks")
-        .select("*")
-        .order("created_at", desc=True)
-        .execute()
-    )
+def get_tasks(user_id):
+    res = supabase.table("tasks").select("*").order("created_at", desc=True).execute()
     return jsonify(res.data)
 
 
 @app.post("/tasks")
 @require_auth
-def create_task(user_id, token):
-    sb = get_supabase_client(token)
+def create_task(user_id):
     body = request.get_json()
-
     if not body or not body.get("title"):
         return jsonify({"error": "title is required"}), 400
 
     task = {
         "id": str(uuid.uuid4()),
-        "user_id": user_id,  # required for RLS insert policy
+        "user_id": user_id,
         "title": body["title"],
         "description": body.get("description", ""),
         "status": body.get("status", "todo"),
@@ -97,9 +75,10 @@ def create_task(user_id, token):
         "label_ids": body.get("label_ids", []),
     }
 
-    res = sb.table("tasks").insert(task).execute()
+    res = supabase.table("tasks").insert(task).execute()
 
-    sb.table("activity").insert({
+    # Log activity
+    supabase.table("activity").insert({
         "id": str(uuid.uuid4()),
         "task_id": task["id"],
         "user_id": user_id,
@@ -112,25 +91,17 @@ def create_task(user_id, token):
 
 @app.patch("/tasks/<task_id>")
 @require_auth
-def update_task(user_id, token, task_id):
-    sb = get_supabase_client(token)
+def update_task(user_id, task_id):
     body = request.get_json()
-
     if not body:
         return jsonify({"error": "request body required"}), 400
 
-    res = (
-        sb.table("tasks")
-        .update(body)
-        .eq("id", task_id)
-        .execute()
-    )
-
+    res = supabase.table("tasks").update(body).eq("id", task_id).execute()
     if not res.data:
         return jsonify({"error": "task not found"}), 404
 
     if "status" in body:
-        sb.table("activity").insert({
+        supabase.table("activity").insert({
             "id": str(uuid.uuid4()),
             "task_id": task_id,
             "user_id": user_id,
@@ -143,19 +114,10 @@ def update_task(user_id, token, task_id):
 
 @app.delete("/tasks/<task_id>")
 @require_auth
-def delete_task(user_id, token, task_id):
-    sb = get_supabase_client(token)
-
-    res = (
-        sb.table("tasks")
-        .delete()
-        .eq("id", task_id)
-        .execute()
-    )
-
+def delete_task(user_id, task_id):
+    res = supabase.table("tasks").delete().eq("id", task_id).execute()
     if not res.data:
         return jsonify({"error": "task not found"}), 404
-
     return "", 204
 
 
@@ -163,25 +125,15 @@ def delete_task(user_id, token, task_id):
 
 @app.get("/tasks/<task_id>/comments")
 @require_auth
-def get_comments(user_id, token, task_id):
-    sb = get_supabase_client(token)
-
-    res = (
-        sb.table("comments")
-        .select("*")
-        .eq("task_id", task_id)
-        .order("created_at")
-        .execute()
-    )
+def get_comments(user_id, task_id):
+    res = supabase.table("comments").select("*").eq("task_id", task_id).order("created_at").execute()
     return jsonify(res.data)
 
 
 @app.post("/tasks/<task_id>/comments")
 @require_auth
-def create_comment(user_id, token, task_id):
-    sb = get_supabase_client(token)
+def create_comment(user_id, task_id):
     body = request.get_json()
-
     if not body or not body.get("text"):
         return jsonify({"error": "text is required"}), 400
 
@@ -192,9 +144,9 @@ def create_comment(user_id, token, task_id):
         "text": body["text"],
     }
 
-    res = sb.table("comments").insert(comment).execute()
+    res = supabase.table("comments").insert(comment).execute()
 
-    sb.table("activity").insert({
+    supabase.table("activity").insert({
         "id": str(uuid.uuid4()),
         "task_id": task_id,
         "user_id": user_id,
@@ -209,16 +161,8 @@ def create_comment(user_id, token, task_id):
 
 @app.get("/tasks/<task_id>/activity")
 @require_auth
-def get_activity(user_id, token, task_id):
-    sb = get_supabase_client(token)
-
-    res = (
-        sb.table("activity")
-        .select("*")
-        .eq("task_id", task_id)
-        .order("created_at", desc=True)
-        .execute()
-    )
+def get_activity(user_id, task_id):
+    res = supabase.table("activity").select("*").eq("task_id", task_id).order("created_at", desc=True).execute()
     return jsonify(res.data)
 
 
@@ -226,19 +170,15 @@ def get_activity(user_id, token, task_id):
 
 @app.get("/team")
 @require_auth
-def get_team(user_id, token):
-    sb = get_supabase_client(token)
-
-    res = sb.table("team_members").select("*").execute()
+def get_team(user_id):
+    res = supabase.table("team_members").select("*").execute()
     return jsonify(res.data)
 
 
 @app.post("/team")
 @require_auth
-def create_team_member(user_id, token):
-    sb = get_supabase_client(token)
+def create_team_member(user_id):
     body = request.get_json()
-
     if not body or not body.get("name"):
         return jsonify({"error": "name is required"}), 400
 
@@ -249,25 +189,16 @@ def create_team_member(user_id, token):
         "color": body.get("color", "#6366f1"),
     }
 
-    res = sb.table("team_members").insert(member).execute()
+    res = supabase.table("team_members").insert(member).execute()
     return jsonify(res.data[0]), 201
 
 
 @app.delete("/team/<member_id>")
 @require_auth
-def delete_team_member(user_id, token, member_id):
-    sb = get_supabase_client(token)
-
-    res = (
-        sb.table("team_members")
-        .delete()
-        .eq("id", member_id)
-        .execute()
-    )
-
+def delete_team_member(user_id, member_id):
+    res = supabase.table("team_members").delete().eq("id", member_id).execute()
     if not res.data:
         return jsonify({"error": "member not found"}), 404
-
     return "", 204
 
 
@@ -275,19 +206,15 @@ def delete_team_member(user_id, token, member_id):
 
 @app.get("/labels")
 @require_auth
-def get_labels(user_id, token):
-    sb = get_supabase_client(token)
-
-    res = sb.table("labels").select("*").execute()
+def get_labels(user_id):
+    res = supabase.table("labels").select("*").execute()
     return jsonify(res.data)
 
 
 @app.post("/labels")
 @require_auth
-def create_label(user_id, token):
-    sb = get_supabase_client(token)
+def create_label(user_id):
     body = request.get_json()
-
     if not body or not body.get("label"):
         return jsonify({"error": "label is required"}), 400
 
@@ -298,25 +225,16 @@ def create_label(user_id, token):
         "color": body.get("color", "#6366f1"),
     }
 
-    res = sb.table("labels").insert(label).execute()
+    res = supabase.table("labels").insert(label).execute()
     return jsonify(res.data[0]), 201
 
 
 @app.delete("/labels/<label_id>")
 @require_auth
-def delete_label(user_id, token, label_id):
-    sb = get_supabase_client(token)
-
-    res = (
-        sb.table("labels")
-        .delete()
-        .eq("id", label_id)
-        .execute()
-    )
-
+def delete_label(user_id, label_id):
+    res = supabase.table("labels").delete().eq("id", label_id).execute()
     if not res.data:
         return jsonify({"error": "label not found"}), 404
-
     return "", 204
 
 
