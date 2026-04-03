@@ -5,6 +5,35 @@ import { Av } from "../Av";
 import { StyledDropdown } from "../StyledDropdown";
 import { CustomDatePicker } from "../CustomDatePicker";
 
+/**
+ * DetailModal
+ *
+ * Full task detail and edit panel. Opens when a task card is clicked.
+ *
+ * Has two tabs:
+ *  - Details — editable fields (status, priority, due date, labels, assignees,
+ *               description) plus the comment thread
+ *  - Activity — chronological timeline of all changes to the task
+ *
+ * All field edits call onUpdateField immediately (optimistic update).
+ * Status changes call onMove which also logs an activity entry.
+ * Comments are submitted on Enter or via the Post button.
+ * Deletion requires a confirmation dialog before calling onDelete.
+ *
+ * @param task           — the task being viewed/edited
+ * @param team           — full team list for the assignee selector
+ * @param labelOptions   — full label list for the label selector
+ * @param detailTab      — which tab is currently active
+ * @param setDetailTab   — switches between details and activity tabs
+ * @param nComment       — current comment input value
+ * @param setNComment    — updates the comment input
+ * @param onClose        — closes the modal
+ * @param onDelete       — deletes the task after confirmation
+ * @param onComment      — posts a new comment
+ * @param onMove         — moves the task to a new status column
+ * @param onUpdateField  — updates any single field on the task
+ */
+
 interface DetailModalProps {
   task: Task;
   team: TeamMember[];
@@ -25,11 +54,15 @@ export function DetailModal({
   nComment, setNComment, onClose, onDelete, onComment, onMove, onUpdateField,
 }: DetailModalProps) {
   return (
+    // Clicking the overlay background closes the modal
     <div className="overlay" onPointerDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal dm" onPointerDown={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
 
+        {/* ── Header — title, status/priority/due badges, delete button ── */}
         <div className="mhdr" style={{ alignItems: "flex-start", padding: "16px 20px" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
+
+            {/* Status, priority, and due date badges shown as read-only pills */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
               {(() => {
                 const col = COLUMNS.find(c => c.id === task.status);
@@ -45,6 +78,7 @@ export function DetailModal({
                   </span>
                 ) : null;
               })()}
+              {/* Due badge only shown on tasks that aren't done */}
               {(() => {
                 if (task.status === "done") return null;
                 const b = getDueBadge(task.dueDate);
@@ -53,10 +87,14 @@ export function DetailModal({
                 ) : null;
               })()}
             </div>
+
+            {/* Task title */}
             <div style={{ fontSize: 17, fontWeight: 600, color: "var(--text)", lineHeight: 1.4, textAlign: "left" }}>
               {task.title}
             </div>
           </div>
+
+          {/* Delete button + close button */}
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
             <button
               className="ibtn"
@@ -69,6 +107,7 @@ export function DetailModal({
           </div>
         </div>
 
+        {/* ── Tab bar — Details / Activity ── */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)", padding: "0 20px", flexShrink: 0 }}>
           {(["details", "activity"] as const).map(tab => (
             <button key={tab} onClick={() => setDetailTab(tab)} style={{
@@ -82,12 +121,17 @@ export function DetailModal({
           ))}
         </div>
 
+        {/* ── Tab content ── */}
         <div style={{ flex: 1, overflowY: "auto", overflowX: "visible", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* ── Details tab ── */}
           {detailTab === "details" && (
             <>
+              {/* Properties grid — status, priority, due date */}
               <div className="detail-grid">
                 <div className="detail-grid-cell">
                   <div className="detail-grid-label">Status</div>
+                  {/* Status change triggers onMove which also logs an activity entry */}
                   <StyledDropdown small value={task.status}
                     onChange={v => onMove(task.id, v as ColumnId)}
                     options={COLUMNS.map(c => ({ value: c.id, label: c.label }))} />
@@ -105,6 +149,7 @@ export function DetailModal({
                 </div>
               </div>
 
+              {/* Labels — clicking toggles assignment */}
               {labelOptions.length > 0 && (
                 <div>
                   <span className="detail-section-label">Labels</span>
@@ -118,8 +163,8 @@ export function DetailModal({
                             fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 5, cursor: "pointer",
                             transition: "all 0.15s",
                             background: active ? l.color + "20" : "transparent",
-                            color: active ? l.color : "var(--text3)",
-                            border: `1px solid ${active ? l.color + "55" : "var(--border2)"}`,
+                            color:      active ? l.color : "var(--text3)",
+                            border:     `1px solid ${active ? l.color + "55" : "var(--border2)"}`,
                           }}>{l.label}</span>
                       );
                     })}
@@ -127,6 +172,7 @@ export function DetailModal({
                 </div>
               )}
 
+              {/* Assignees — clicking toggles assignment, checkmark shown when assigned */}
               {team.length > 0 && (
                 <div>
                   <span className="detail-section-label">Assignees</span>
@@ -140,7 +186,7 @@ export function DetailModal({
                             display: "flex", alignItems: "center", gap: 7, padding: "5px 10px 5px 6px",
                             borderRadius: 99, cursor: "pointer",
                             background: on ? "var(--accent-dim)" : "var(--bg3)",
-                            border: `1px solid ${on ? "rgba(56,180,255,0.3)" : "var(--border2)"}`,
+                            border:     `1px solid ${on ? "rgba(56,180,255,0.3)" : "var(--border2)"}`,
                             transition: "all 0.15s",
                           }}>
                           <Av name={m.name} color={m.color} size={22} />
@@ -153,6 +199,7 @@ export function DetailModal({
                 </div>
               )}
 
+              {/* Description — editable textarea */}
               <div>
                 <span className="detail-section-label">Description</span>
                 <textarea
@@ -164,6 +211,7 @@ export function DetailModal({
                 />
               </div>
 
+              {/* Comments — sorted newest first, Enter submits */}
               <div>
                 <span className="detail-section-label">
                   Comments{task.comments.length > 0 && (
@@ -184,11 +232,13 @@ export function DetailModal({
                           gap: 12,
                         }}>
                           <span style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{c.text}</span>
+                          {/* Relative timestamp e.g. "2m ago" */}
                           <span style={{ fontSize: 11, color: "var(--text3)", whiteSpace: "nowrap", flexShrink: 0, marginTop: 2 }}>{timeAgo(c.at)}</span>
                         </div>
                       ))}
                   </div>
                 )}
+                {/* Comment input — Enter (without Shift) submits */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input
                     className="fi"
@@ -204,6 +254,7 @@ export function DetailModal({
             </>
           )}
 
+          {/* ── Activity tab — chronological event timeline ── */}
           {detailTab === "activity" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               {task.activity.length === 0 && (
@@ -216,6 +267,7 @@ export function DetailModal({
                     display: "flex", alignItems: "flex-start", gap: 12,
                     padding: "12px 0", borderBottom: "1px solid var(--border)",
                   }}>
+                    {/* Activity type icon — color coded by event type */}
                     <div style={{
                       width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
                       background: a.type === "moved" ? "rgba(56,180,255,0.15)" : a.type === "comment" ? "rgba(16,185,129,0.15)" : "var(--bg4)",

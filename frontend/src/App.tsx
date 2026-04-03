@@ -14,35 +14,64 @@ import { DetailModal } from "./components/modals/DetailModal";
 import { TeamModal } from "./components/modals/TeamModal";
 import { LabelsModal } from "./components/modals/LabelsModal";
 
+/**
+ * KanbanApp — root component for the task board.
+ *
+ * Responsibilities:
+ *  - Anonymous auth via Supabase on first load
+ *  - Fetching and storing all tasks, team members, and labels
+ *  - Filtering tasks by search, priority, assignee, and label
+ *  - Handling all CRUD operations (create, update, delete)
+ *  - Rendering the board, toolbar, header, and all modals
+ */
 export default function KanbanApp() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // ── UI State ──────────────────────────────────────────────────────────────
+
+  const [loading, setLoading] = useState(true);       // True while fetching initial data
+  const [error, setError] = useState<string | null>(null); // Global error banner message
+
+  // ── Data State ────────────────────────────────────────────────────────────
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [labelOptions, setLabelOptions] = useState<LabelOption[]>([]);
 
-  const [search, setSearch] = useState("");
-  const [fPri, setFPri] = useState<PriorityId | "all">("all");
-  const [fAsgn, setFAsgn] = useState("all");
-  const [fLbl, setFLbl] = useState("all");
+  // ── Filter State ──────────────────────────────────────────────────────────
+
+  const [search, setSearch] = useState("");                        // Title search string
+  const [fPri, setFPri] = useState<PriorityId | "all">("all");    // Priority filter
+  const [fAsgn, setFAsgn] = useState("all");                      // Assignee filter
+  const [fLbl, setFLbl] = useState("all");                        // Label filter
+
+  // ── Modal Visibility ──────────────────────────────────────────────────────
 
   const [showCreate, setShowCreate] = useState(false);
-  const [showDetail, setShowDetail] = useState<string | null>(null);
+  const [showDetail, setShowDetail] = useState<string | null>(null); // Task ID of open detail modal
   const [showTeam, setShowTeam] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
 
-  const [nTask, setNTask] = useState<NewTaskForm>(BLANK_TASK);
-  const [nComment, setNComment] = useState("");
-  const [nMember, setNMember] = useState("");
-  const [nLabelName, setNLabelName] = useState("");
-  const [nLabelColor, setNLabelColor] = useState(LABEL_COLORS[0]);
-  const [saving, setSaving] = useState(false);
-  const [detailTab, setDetailTab] = useState<"details" | "activity">("details");
+  // ── Form State ────────────────────────────────────────────────────────────
+
+  const [nTask, setNTask] = useState<NewTaskForm>(BLANK_TASK);    // New task form values
+  const [nComment, setNComment] = useState("");                    // New comment input
+  const [nMember, setNMember] = useState("");                      // New team member name input
+  const [nLabelName, setNLabelName] = useState("");                // New label name input
+  const [nLabelColor, setNLabelColor] = useState(LABEL_COLORS[0]); // New label color picker
+  const [saving, setSaving] = useState(false);                     // Disables create button while saving
+  const [detailTab, setDetailTab] = useState<"details" | "activity">("details"); // Active tab in detail modal
+
+  // ── Drag and Drop ─────────────────────────────────────────────────────────
+  // Custom hook that handles pointer events, drag clone, column hit detection,
+  // and optimistic status updates on drop.
 
   const { dragOverCol, draggingId, colRefs, startDrag, handleCardClick } = useDragAndDrop(tasks, setTasks, setError);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
+  // On mount, check for an existing Supabase session. If none exists,
+  // sign in anonymously. Either way, load data once auth is confirmed.
+  // The `ignore` flag prevents state updates if the component unmounts early.
+
   useEffect(() => {
     let ignore = false;
     async function initAuth() {
@@ -63,7 +92,11 @@ export default function KanbanApp() {
     return () => { ignore = true; };
   }, []);
 
-  // ── Load data ─────────────────────────────────────────────────────────────
+  // ── Load Data ─────────────────────────────────────────────────────────────
+  // Fetches tasks, team, and labels in parallel. Then fetches comments and
+  // activity for each task in parallel and attaches them to the task objects.
+  // This way the detail panel never needs to make additional network requests.
+
   async function loadData() {
     setLoading(true);
     setError(null);
@@ -74,6 +107,7 @@ export default function KanbanApp() {
         apiFetch<any[]>("/labels"),
       ]);
 
+      // Fetch comments + activity for every task simultaneously
       const details = await Promise.all(
         apiTasks.map(t => Promise.all([
           apiFetch<any[]>(`/tasks/${t.id}/comments`),
@@ -81,6 +115,7 @@ export default function KanbanApp() {
         ]))
       );
 
+      // Map API response shapes to frontend Task type
       setTasks(apiTasks.map((t, i) => {
         const [comments, activity] = details[i];
         return {
@@ -107,7 +142,9 @@ export default function KanbanApp() {
     }
   }
 
-  // ── Derived ───────────────────────────────────────────────────────────────
+  // ── Derived State ─────────────────────────────────────────────────────────
+  // All filtering is done in memory — no API calls needed when filters change.
+
   const filtered = tasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (fPri !== "all" && t.priority !== fPri) return false;
@@ -116,9 +153,12 @@ export default function KanbanApp() {
     return true;
   });
 
+  // Returns filtered tasks for a given column
   const colTasks = (id: ColumnId) => filtered.filter(t => t.status === id);
-  const total = tasks.length;
-  const done = tasks.filter(t => t.status === "done").length;
+
+  // Header stats — derived directly from task state
+  const total  = tasks.length;
+  const done   = tasks.filter(t => t.status === "done").length;
   const inProg = tasks.filter(t => t.status === "in_progress").length;
   const overdue = tasks.filter(t =>
     t.dueDate && t.status !== "done" &&
@@ -133,6 +173,11 @@ export default function KanbanApp() {
   ];
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Creates a new task via the API and prepends it to the task list.
+   * Includes an optimistic activity entry for "Task created".
+   */
   const doCreate = async () => {
     if (!nTask.title.trim()) return;
     setSaving(true);
@@ -171,6 +216,10 @@ export default function KanbanApp() {
     }
   };
 
+  /**
+   * Posts a new comment to a task and updates the task's comment list
+   * and activity log optimistically.
+   */
   const doComment = async (tid: string) => {
     if (!nComment.trim()) return;
     try {
@@ -191,6 +240,9 @@ export default function KanbanApp() {
     }
   };
 
+  /**
+   * Adds a new team member. Color is auto-assigned by cycling through TEAM_COLORS.
+   */
   const doAddMember = async () => {
     if (!nMember.trim()) return;
     try {
@@ -206,6 +258,7 @@ export default function KanbanApp() {
     }
   };
 
+  /** Removes a team member by ID. */
   const doRemoveMember = async (memberId: string) => {
     try {
       await apiFetch(`/team/${memberId}`, { method: "DELETE" });
@@ -215,6 +268,7 @@ export default function KanbanApp() {
     }
   };
 
+  /** Creates a new label with the selected name and color. */
   const doAddLabel = async () => {
     if (!nLabelName.trim()) return;
     try {
@@ -230,6 +284,10 @@ export default function KanbanApp() {
     }
   };
 
+  /**
+   * Deletes a label and removes it from all tasks that had it assigned.
+   * Also resets the label filter if it was filtering by the deleted label.
+   */
   const doDeleteLabel = async (labelId: string) => {
     try {
       await apiFetch(`/labels/${labelId}`, { method: "DELETE" });
@@ -241,6 +299,7 @@ export default function KanbanApp() {
     }
   };
 
+  /** Deletes a task and closes the detail modal if it was open. */
   const doDeleteTask = async (taskId: string) => {
     try {
       await apiFetch(`/tasks/${taskId}`, { method: "DELETE" });
@@ -251,14 +310,23 @@ export default function KanbanApp() {
     }
   };
 
+  /**
+   * Updates a single field on a task — both in local state (immediately)
+   * and via a PATCH request to the API.
+   * Maps frontend field names (camelCase) to database column names (snake_case).
+   */
   const updateTaskField = async <K extends keyof Task>(id: string, key: K, value: Task[K]) => {
+    // Optimistic update
     setTasks(prev => prev.map(t => t.id !== id ? t : { ...t, [key]: value }));
+
     const colMap: Partial<Record<keyof Task, string>> = {
       status: "status", priority: "priority", dueDate: "due_date",
       description: "description", title: "title", labels: "label_ids", assignees: "assignees",
     };
     const dbCol = colMap[key];
     if (!dbCol) return;
+
+    // dueDate sends null if cleared, otherwise the ISO date string
     const dbVal = key === "dueDate" ? (value as string) || null : value;
     try {
       await apiFetch(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ [dbCol]: dbVal }) });
@@ -267,12 +335,19 @@ export default function KanbanApp() {
     }
   };
 
+  /**
+   * Moves a task to a new column — used by both the dropdown in the detail
+   * modal and the drag-and-drop handler.
+   * Updates local state immediately and logs an activity entry.
+   */
   const moveTask = async (taskId: string, newStatus: ColumnId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const oc = COLUMNS.find(c => c.id === task.status);
     const nc = COLUMNS.find(c => c.id === newStatus);
     const logText = `Moved from ${oc?.label} → ${nc?.label}`;
+
+    // Optimistic update + activity log entry
     setTasks(prev => prev.map(t =>
       t.id !== taskId ? t : {
         ...t, status: newStatus,
@@ -286,14 +361,20 @@ export default function KanbanApp() {
     }
   };
 
+  /**
+   * Opens the detail modal for a task.
+   * Wrapped in useCallback since it's passed as a prop to TaskCard via the drag hook.
+   */
   const openDetail = useCallback((id: string) => {
     setDetailTab("details");
     setShowDetail(id);
   }, []);
 
+  // Resolve the full task object for the currently open detail modal
   const detailTask = showDetail ? tasks.find(t => t.id === showDetail) ?? null : null;
 
-  // ── Loading ───────────────────────────────────────────────────────────────
+  // ── Loading Screen ────────────────────────────────────────────────────────
+
   if (loading) {
     return (
       <div style={{
@@ -313,8 +394,10 @@ export default function KanbanApp() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+
   return (
     <>
+      {/* Global error banner — dismissible */}
       {error && (
         <div style={{
           position: "fixed", top: 16, right: 16, zIndex: 9999,
@@ -331,10 +414,12 @@ export default function KanbanApp() {
 
       <div className="app">
 
-        {/* Header */}
+        {/* ── Header — logo, stats, progress bar, action buttons ── */}
         <div className="hdr">
           <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
             <div className="logo">Task Board</div>
+
+            {/* Stat items (total, in progress, completed, overdue) */}
             <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
               {statItems.map((s, i) => (
                 <div key={s.label} style={{
@@ -345,6 +430,8 @@ export default function KanbanApp() {
                   <span style={{ fontSize: 14, fontWeight: 600, color: s.red ? "#e05555" : "var(--text)" }}>{s.val}</span>
                 </div>
               ))}
+
+              {/* Progress bar — done/total */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px", borderLeft: "1px solid rgba(120,200,255,0.1)" }}>
                 <div style={{ width: 60, height: 3, background: "var(--bg4)", borderRadius: 99, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${total > 0 ? (done/total)*100 : 0}%`, background: "var(--accent)", borderRadius: 99, transition: "width .4s" }} />
@@ -355,6 +442,8 @@ export default function KanbanApp() {
               </div>
             </div>
           </div>
+
+          {/* Action buttons */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn btn-g btn-labels" onClick={() => setShowLabels(true)}>Labels</button>
             <button className="btn btn-g" onClick={() => setShowTeam(true)}>Team</button>
@@ -362,7 +451,7 @@ export default function KanbanApp() {
           </div>
         </div>
 
-        {/* Toolbar */}
+        {/* ── Toolbar — search + filter dropdowns ── */}
         <div className="toolbar">
           <div className="sw">
             <svg className="si" width="14" height="14" fill="none" viewBox="0 0 16 16">
@@ -379,20 +468,25 @@ export default function KanbanApp() {
             options={[{ value: "all", label: "All Labels" }, ...labelOptions.map(l => ({ value: l.id, label: l.label }))]} />
         </div>
 
-        {/* Board */}
+        {/* ── Board — four columns ── */}
         <div className="board">
           {COLUMNS.map(col => {
             const ct = colTasks(col.id);
             return (
               <div key={col.id} className="col">
+
+                {/* Column header with task count */}
                 <div className="col-hdr">
                   <span className="col-title">{col.label}</span>
                   <span className="col-cnt">{ct.length}</span>
                 </div>
+
+                {/* Drop zone — highlighted when a card is dragged over */}
                 <div
                   className={`col-body${dragOverCol === col.id ? " over" : ""}`}
                   ref={el => { colRefs.current[col.id] = el; }}
                 >
+                  {/* Empty state */}
                   {ct.length === 0 && (
                     <div className="col-empty">
                       <svg width="22" height="22" fill="none" viewBox="0 0 24 24">
@@ -402,18 +496,22 @@ export default function KanbanApp() {
                       Drop tasks here
                     </div>
                   )}
+
+                  {/* Task cards */}
                   {ct.map(task => (
                     <TaskCard
                       key={task.id}
                       task={task}
                       team={team}
                       labelOptions={labelOptions}
-                      ghost={draggingId === task.id}
+                      ghost={draggingId === task.id}       // Fades out the original card while dragging
                       onPointerDown={e => startDrag(e, task.id)}
                       onClick={() => handleCardClick(task.id, openDetail)}
                     />
                   ))}
                 </div>
+
+                {/* Quick-add button at the bottom of each column */}
                 <button className="add-btn"
                   onClick={() => { setNTask(n => ({ ...n, status: col.id })); setShowCreate(true); }}>
                   <svg width="12" height="12" fill="none" viewBox="0 0 12 12">
@@ -426,7 +524,9 @@ export default function KanbanApp() {
           })}
         </div>
 
-        {/* Modals */}
+        {/* ── Modals ── */}
+
+        {/* Create task modal */}
         {showCreate && (
           <CreateTaskModal
             nTask={nTask} setNTask={setNTask} saving={saving}
@@ -435,6 +535,7 @@ export default function KanbanApp() {
           />
         )}
 
+        {/* Task detail / edit modal — only renders when a task is selected */}
         {detailTask && (
           <DetailModal
             task={detailTask} team={team} labelOptions={labelOptions}
@@ -448,6 +549,7 @@ export default function KanbanApp() {
           />
         )}
 
+        {/* Team members modal */}
         {showTeam && (
           <TeamModal
             team={team} nMember={nMember} setNMember={setNMember}
@@ -455,6 +557,7 @@ export default function KanbanApp() {
           />
         )}
 
+        {/* Labels management modal */}
         {showLabels && (
           <LabelsModal
             labelOptions={labelOptions} tasks={tasks}
@@ -463,6 +566,7 @@ export default function KanbanApp() {
             onClose={() => setShowLabels(false)} onAdd={doAddLabel} onDelete={doDeleteLabel}
           />
         )}
+
       </div>
     </>
   );
