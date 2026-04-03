@@ -1,73 +1,49 @@
-# React + TypeScript + Vite
+# Kanban-Style Task Board
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This project is a Kanban-style Task Board where users can create and categorize tasks based on labels, priorities, and current work state.
 
-Currently, two official plugins are available:
+Below are the setup instructions:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+# SETUP INSTRUCTIONS:
+Set up Prerequisites
+● Node.js
+● Python
+● A Supabase project with the tables and RLS policies set up (see SQL schema above)
 
-## React Compiler
+# Clone the repo
+In terminal:
+git clone https://github.com/sowmyakrishna2007/kanban-task-board.git
+cd kanban-task-board
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+#Setup the backend
+In the terminal:
+cd backend
+python -m venv venv
+source venv/bin/activate # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+Create a .env file in the backend folder:
+SUPABASE_URL= [your project URL from Supabase]
+SUPABASE_ANON_KEY= [your anon key from Supabase]
 
-## Expanding the ESLint configuration
+# Start the Flask server:
+In the terminal:
+python app.py
+This backend now runs on http://localhost:8080
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# Setup frontend
+In the terminal:
+cd ../frontend
+npm install
+Create a .env.local file in the frontend folder:
+VITE_API_URL=http://localhost:8080
+VITE_SUPABASE_URL= [your project URL from Supabase]
+VITE_SUPABASE_ANON_KEY= [your anon key from Supabase]
+Start the dev server:
+In the terminal:
+npm run dev
+The frontend now runs on http://localhost:5173
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# Open the app
+Open http://localhost:5173, all website features should be accessible!
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
