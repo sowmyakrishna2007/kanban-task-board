@@ -219,6 +219,7 @@ input, textarea, select { font-family: var(--sans); user-select: text; }
   padding: 24px;
   overflow-x: auto;
   overflow-y: hidden;
+  justify-content: center;
 }
 
 /* ══════════════════════════════════════════════
